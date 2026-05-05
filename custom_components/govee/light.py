@@ -83,7 +83,8 @@ async def async_setup_entry(
         if device.is_light_device and device.supports_power:
             entities.append(GoveeLightEntity(coordinator, device, enable_scenes))
 
-        # Night light entities for non-light devices (purifiers, heaters, etc.).
+        # Create light entity only for night lights with brightness/color control;
+        # on/off-only night lights use switch entity instead.
         if (
             not device.is_light_device
             and device.supports_night_light
@@ -93,7 +94,6 @@ async def async_setup_entry(
                 or device.supports_color_temp
             )
         ):
-            # Create for night lights with brightness/color control; on/off-only uses switch entity.
             entities.append(GoveeNightLightEntity(coordinator, device))
 
         # Create segment entities for RGBIC devices based on per-device mode

@@ -48,7 +48,7 @@ from .models.device import (
 # DIY Style options for select entity
 DIY_STYLE_OPTIONS = list(DIY_STYLE_NAMES.keys())
 
-# Purifier work mode constant (gear/manual mode) for devices lacking purifierMode.
+# Purifier work mode constant (gear/manual mode) for workMode-based devices.
 PURIFIER_WORK_MODE_GEAR = 1
 
 _LOGGER = logging.getLogger(__name__)
