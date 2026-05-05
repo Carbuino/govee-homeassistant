@@ -325,7 +325,6 @@ class TestPurifierModeSelectEntity:
 
         # Command should still be attempted
 
-
 class TestPurifierModeSelectWorkModeEntity:
     """Test purifier mode select entity for work_mode devices."""
 

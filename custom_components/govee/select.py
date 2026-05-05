@@ -915,7 +915,7 @@ class GoveePurifierModeSelectEntity(GoveeEntity, SelectEntity):
             return
 
         if self._use_work_mode:
-            command: ModeCommand | WorkModeCommand = WorkModeCommand(
+            command = WorkModeCommand(
                 work_mode=PURIFIER_WORK_MODE_GEAR,
                 mode_value=value,
             )

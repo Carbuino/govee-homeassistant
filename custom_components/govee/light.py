@@ -392,7 +392,6 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
 
         self._effect_names = names
 
-
     async def async_added_to_hass(self) -> None:
         """Restore state for group devices and load scenes for effects."""
         await super().async_added_to_hass()
