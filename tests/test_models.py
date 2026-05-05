@@ -413,6 +413,34 @@ class TestGoveeDeviceState:
         assert state.color.as_tuple == (255, 128, 64)
         assert state.source == "api"
 
+    def test_update_from_api_parses_nightlight_and_purifier_mode(self):
+        """Test parsing night light and purifier mode values from API."""
+        state = GoveeDeviceState.create_empty("test_id")
+        api_response = {
+            "capabilities": [
+                {
+                    "type": "devices.capabilities.toggle",
+                    "instance": "nightlightToggle",
+                    "state": {"value": 1},
+                },
+                {
+                    "type": "devices.capabilities.mode",
+                    "instance": "nightlightScene",
+                    "state": {"value": 3},
+                },
+                {
+                    "type": "devices.capabilities.mode",
+                    "instance": "purifierMode",
+                    "state": {"value": 2},
+                },
+            ],
+        }
+        state.update_from_api(api_response)
+
+        assert state.nightlight_enabled is True
+        assert state.nightlight_scene == 3
+        assert state.purifier_mode == 2
+
     def test_update_from_mqtt(self, mqtt_state_message):
         """Test updating state from MQTT message."""
         state = GoveeDeviceState.create_empty("AA:BB:CC:DD:EE:FF:00:11")

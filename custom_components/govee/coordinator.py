@@ -73,6 +73,9 @@ from .models.commands import (
 from .models.device import (
     INSTANCE_DREAMVIEW,
     INSTANCE_HDMI_SOURCE,
+    INSTANCE_NIGHT_LIGHT,
+    INSTANCE_NIGHT_LIGHT_SCENE,
+    INSTANCE_PURIFIER_MODE,
     INSTANCE_THERMOSTAT_TOGGLE,
 )
 from .scene_cache import SceneCacheManager
@@ -703,6 +706,16 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 if existing_state.heater_auto_stop is not None:
                     state.heater_auto_stop = existing_state.heater_auto_stop
 
+                # Night light state can be independent of power; preserve when missing.
+                if existing_state.nightlight_enabled is not None and (
+                    state.nightlight_enabled is None
+                ):
+                    state.nightlight_enabled = existing_state.nightlight_enabled
+                if existing_state.nightlight_scene is not None and (
+                    state.nightlight_scene is None
+                ):
+                    state.nightlight_scene = existing_state.nightlight_scene
+
                 self._preserve_optimistic_field(
                     existing_state, state, device_id, "dreamview_enabled", "DreamView"
                 )
@@ -1296,6 +1309,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         elif isinstance(command, ModeCommand):
             if command.mode_instance == INSTANCE_HDMI_SOURCE:
                 state.apply_optimistic_hdmi_source(command.value)
+            elif command.mode_instance == INSTANCE_PURIFIER_MODE:
+                state.purifier_mode = command.value
+            elif command.mode_instance == INSTANCE_NIGHT_LIGHT_SCENE:
+                state.nightlight_scene = command.value
         elif isinstance(command, TemperatureSettingCommand):
             state.heater_temperature = command.temperature
             state.heater_auto_stop = command.auto_stop
@@ -1319,6 +1336,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             # Handle toggle commands (DreamView, night light, thermostat, etc)
             if command.toggle_instance == INSTANCE_DREAMVIEW:
                 state.apply_optimistic_dreamview(command.enabled)
+            elif command.toggle_instance == INSTANCE_NIGHT_LIGHT:
+                state.nightlight_enabled = command.enabled
             elif command.toggle_instance == INSTANCE_THERMOSTAT_TOGGLE:
                 state.heater_auto_stop = 1 if command.enabled else 0
 

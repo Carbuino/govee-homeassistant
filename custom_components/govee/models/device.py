@@ -44,6 +44,7 @@ INSTANCE_SEGMENT_COLOR = "segmentedColorRgb"
 INSTANCE_SCENE = "lightScene"
 INSTANCE_DIY = "diyScene"
 INSTANCE_NIGHT_LIGHT = "nightlightToggle"
+INSTANCE_NIGHT_LIGHT_SCENE = "nightlightScene"
 INSTANCE_GRADUAL_ON = "gradientToggle"
 INSTANCE_TIMER = "timer"
 INSTANCE_OSCILLATION = "oscillationToggle"
@@ -285,6 +286,14 @@ class GoveeDevice:
         return any(cap.is_night_light for cap in self.capabilities)
 
     @property
+    def supports_night_light_scene(self) -> bool:
+        """Check if device supports night light scene selection."""
+        return any(
+            cap.type == CAPABILITY_MODE and cap.instance == INSTANCE_NIGHT_LIGHT_SCENE
+            for cap in self.capabilities
+        )
+
+    @property
     def supports_music_mode(self) -> bool:
         """Check if device supports music mode.
 
@@ -487,6 +496,14 @@ class GoveeDevice:
         """Get available HDMI source options from capability parameters."""
         for cap in self.capabilities:
             if cap.is_hdmi_source:
+                options: list[dict[str, Any]] = cap.parameters.get("options", [])
+                return options
+        return []
+
+    def get_night_light_scene_options(self) -> list[dict[str, Any]]:
+        """Get available night light scene options from capability parameters."""
+        for cap in self.capabilities:
+            if cap.type == CAPABILITY_MODE and cap.instance == INSTANCE_NIGHT_LIGHT_SCENE:
                 options: list[dict[str, Any]] = cap.parameters.get("options", [])
                 return options
         return []

@@ -106,6 +106,9 @@
       "govee_light": {
         "name": "{device_name}"
       },
+      "govee_night_light": {
+        "name": "Night Light"
+      },
       "govee_segment": {
         "name": "{device_name} Segment {segment_index}"
       },
@@ -133,6 +136,9 @@
       },
       "govee_music_mode_select": {
         "name": "Music Mode"
+      },
+      "govee_night_light_scene_select": {
+        "name": "Night Light Scene"
       }
     },
     "switch": {

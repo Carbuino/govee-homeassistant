@@ -10,9 +10,11 @@ from custom_components.govee.models import GoveeCapability, GoveeDevice
 from custom_components.govee.models.device import (
     CAPABILITY_MODE,
     CAPABILITY_ON_OFF,
+    CAPABILITY_WORK_MODE,
     DEVICE_TYPE_PURIFIER,
     INSTANCE_POWER,
     INSTANCE_PURIFIER_MODE,
+    INSTANCE_WORK_MODE,
 )
 
 # ==============================================================================
@@ -53,6 +55,70 @@ def mock_purifier_device(purifier_capabilities) -> GoveeDevice:
         name="Living Room Air Purifier",
         device_type=DEVICE_TYPE_PURIFIER,
         capabilities=purifier_capabilities,
+        is_group=False,
+    )
+
+
+@pytest.fixture
+def purifier_work_mode_capabilities() -> tuple[GoveeCapability, ...]:
+    """Create workMode capabilities for a purifier device (H7129-style)."""
+    return (
+        GoveeCapability(
+            type=CAPABILITY_ON_OFF,
+            instance=INSTANCE_POWER,
+            parameters={},
+        ),
+        GoveeCapability(
+            type=CAPABILITY_WORK_MODE,
+            instance=INSTANCE_WORK_MODE,
+            parameters={
+                "fields": [
+                    {
+                        "fieldName": "workMode",
+                        "dataType": "ENUM",
+                        "options": [
+                            {"name": "gearMode", "value": 1},
+                            {"name": "Sleep", "value": 5},
+                            {"name": "Auto", "value": 3},
+                            {"name": "Turbo", "value": 7},
+                        ],
+                        "required": True,
+                    },
+                    {
+                        "fieldName": "modeValue",
+                        "dataType": "ENUM",
+                        "options": [
+                            {
+                                "name": "gearMode",
+                                "options": [
+                                    {"name": "Low", "value": 1},
+                                    {"name": "Medium", "value": 2},
+                                    {"name": "High", "value": 3},
+                                ],
+                            },
+                            {"defaultValue": 0, "name": "Auto"},
+                            {"defaultValue": 0, "name": "Sleep"},
+                            {"defaultValue": 0, "name": "Turbo"},
+                        ],
+                        "required": True,
+                    },
+                ],
+            },
+        ),
+    )
+
+
+@pytest.fixture
+def mock_purifier_work_mode_device(
+    purifier_work_mode_capabilities,
+) -> GoveeDevice:
+    """Create a mock purifier device with workMode control (H7129-style)."""
+    return GoveeDevice(
+        device_id="AA:BB:CC:DD:EE:FF:00:99",
+        sku="H7129",
+        name="Bedroom Air Purifier",
+        device_type=DEVICE_TYPE_PURIFIER,
+        capabilities=purifier_work_mode_capabilities,
         is_group=False,
     )
 
@@ -258,4 +324,68 @@ class TestPurifierModeSelectEntity:
         await purifier_mode_entity.async_select_option("Sleep")
 
         # Command should still be attempted
+
+
+class TestPurifierModeSelectWorkModeEntity:
+    """Test purifier mode select entity for work_mode devices."""
+
+    @pytest.fixture
+    def mock_coordinator(self, mock_purifier_work_mode_device):
+        """Create a mock coordinator for work mode purifier tests."""
+        from custom_components.govee.models import GoveeDeviceState
+
+        coordinator = MagicMock()
+        coordinator.devices = {
+            mock_purifier_work_mode_device.device_id: mock_purifier_work_mode_device
+        }
+
+        state = GoveeDeviceState(
+            device_id=mock_purifier_work_mode_device.device_id,
+            online=True,
+            power_state=True,
+            source="api",
+        )
+        state.work_mode = 1
+        state.mode_value = 2  # Medium
+
+        coordinator.get_state = MagicMock(return_value=state)
+        coordinator.async_control_device = AsyncMock(return_value=True)
+        return coordinator
+
+    @pytest.fixture
+    def purifier_mode_entity(self, mock_coordinator, mock_purifier_work_mode_device):
+        """Create a purifier mode select entity for workMode devices."""
+        from custom_components.govee.select import GoveePurifierModeSelectEntity
+
+        options = mock_purifier_work_mode_device.get_purifier_mode_options()
+        entity = GoveePurifierModeSelectEntity(
+            coordinator=mock_coordinator,
+            device=mock_purifier_work_mode_device,
+            options=options,
+            use_work_mode=True,
+        )
+        entity.hass = MagicMock()
+        entity.async_write_ha_state = MagicMock()
+        return entity
+
+    def test_current_option_uses_mode_value(self, purifier_mode_entity):
+        """Test current option maps from work_mode mode_value."""
+        assert purifier_mode_entity.current_option == "Medium"
+
+    async def test_select_purifier_mode_sends_work_mode_command(
+        self, purifier_mode_entity, mock_coordinator
+    ):
+        """Test selecting purifier mode sends WorkModeCommand."""
+        await purifier_mode_entity.async_select_option("High")
+
+        mock_coordinator.async_control_device.assert_called_once()
+        call_args = mock_coordinator.async_control_device.call_args
+        device_id, command = call_args[0]
+
+        assert device_id == purifier_mode_entity._device_id
+        from custom_components.govee.models import WorkModeCommand
+
+        assert isinstance(command, WorkModeCommand)
+        assert command.work_mode == 1
+        assert command.mode_value == 3
         mock_coordinator.async_control_device.assert_called_once()

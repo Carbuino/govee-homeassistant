@@ -194,6 +194,9 @@ class GoveeNightLightSwitchEntity(GoveeEntity, SwitchEntity, RestoreEntity):
     @property
     def is_on(self) -> bool:
         """Return True if night light is on."""
+        state = self.device_state
+        if state and state.nightlight_enabled is not None:
+            return state.nightlight_enabled
         return self._is_on
 
     async def async_turn_on(self, **kwargs: Any) -> None:

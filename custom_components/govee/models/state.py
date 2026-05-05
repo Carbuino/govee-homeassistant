@@ -107,6 +107,10 @@ class GoveeDeviceState:
     # DreamView (Movie Mode) state
     dreamview_enabled: bool | None = None  # DreamView on/off
 
+    # Night light state (for devices like H7129 air purifier)
+    nightlight_enabled: bool | None = None  # Night light toggle state
+    nightlight_scene: int | None = None  # Night light scene value
+
     # Heater state
     heater_temperature: int | None = None  # Target temperature in Celsius
     heater_auto_stop: int | None = None  # Auto-stop setting (0=Maintain, 1=Auto-stop)
@@ -196,6 +200,8 @@ class GoveeDeviceState:
                     self.oscillating = bool(value)
                 elif instance == "dreamViewToggle":
                     self.dreamview_enabled = bool(value)
+                elif instance == "nightlightToggle":
+                    self.nightlight_enabled = bool(value)
 
             elif cap_type == "devices.capabilities.work_mode":
                 if instance == "workMode" and isinstance(value, dict):
@@ -205,6 +211,10 @@ class GoveeDeviceState:
             elif cap_type == "devices.capabilities.mode":
                 if instance == "hdmiSource":
                     self.hdmi_source = int(value) if value is not None else None
+                elif instance == "purifierMode":
+                    self.purifier_mode = int(value) if value is not None else None
+                elif instance == "nightlightScene":
+                    self.nightlight_scene = int(value) if value is not None else None
 
             elif cap_type == "devices.capabilities.property":
                 # Read-only sensor properties on devices like H5109 and
