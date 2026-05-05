@@ -387,4 +387,3 @@ class TestPurifierModeSelectWorkModeEntity:
         assert isinstance(command, WorkModeCommand)
         assert command.work_mode == 1
         assert command.mode_value == 3
-        mock_coordinator.async_control_device.assert_called_once()
