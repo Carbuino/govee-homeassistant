@@ -34,6 +34,7 @@ from .const import (
     DEFAULT_ENABLE_SCENES,
     SEGMENT_MODE_GROUPED,
     SEGMENT_MODE_INDIVIDUAL,
+    SUFFIX_NIGHT_LIGHT_LIGHT,
 )
 from .coordinator import GoveeCoordinator
 from .entity import GoveeEntity
@@ -45,6 +46,7 @@ from .models import (
     PowerCommand,
     RGBColor,
     SceneCommand,
+    create_night_light_command,
 )
 from .platforms.grouped_segment import GoveeGroupedSegmentEntity
 from .platforms.segment import GoveeSegmentEntity
@@ -80,6 +82,19 @@ async def async_setup_entry(
         # appear as a light bulb (issue #54).
         if device.is_light_device and device.supports_power:
             entities.append(GoveeLightEntity(coordinator, device, enable_scenes))
+
+        # Create light entity only for night lights with brightness/color control;
+        # on/off-only night lights use switch entity instead.
+        if (
+            not device.is_light_device
+            and device.supports_night_light
+            and (
+                device.supports_brightness
+                or device.supports_rgb
+                or device.supports_color_temp
+            )
+        ):
+            entities.append(GoveeNightLightEntity(coordinator, device))
 
         # Create segment entities for RGBIC devices based on per-device mode
         if device.supports_segments and device.segment_count > 0:
@@ -399,3 +414,161 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
             scenes = await self.coordinator.async_get_scenes(self._device_id)
             if scenes:
                 self._build_effect_mapping(scenes)
+
+
+class GoveeNightLightEntity(GoveeEntity, LightEntity, RestoreEntity):
+    """Govee night light entity for non-light devices."""
+
+    _attr_translation_key = "govee_night_light"
+    _attr_icon = "mdi:lightbulb-night"
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+    ) -> None:
+        """Initialize the night light entity."""
+        super().__init__(coordinator, device)
+
+        self._attr_name = None  # Use translated entity name
+        self._attr_unique_id = f"{device.device_id}{SUFFIX_NIGHT_LIGHT_LIGHT}"
+
+        self._attr_supported_color_modes = self._determine_color_modes()
+        self._brightness_min, self._brightness_max = device.brightness_range
+
+        self._is_on = False
+
+    def _determine_color_modes(self) -> set[ColorMode]:
+        """Determine supported color modes for night light."""
+        modes: set[ColorMode] = set()
+
+        if self._device.supports_rgb:
+            modes.add(ColorMode.RGB)
+
+        if self._device.supports_color_temp:
+            modes.add(ColorMode.COLOR_TEMP)
+
+        if not modes and self._device.supports_brightness:
+            modes.add(ColorMode.BRIGHTNESS)
+
+        if not modes:
+            modes.add(ColorMode.ONOFF)
+
+        return modes
+
+    async def async_added_to_hass(self) -> None:
+        """Restore state on startup."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state:
+            self._is_on = last_state.state == "on"
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return True if night light is on."""
+        state = self.device_state
+        if state and state.nightlight_enabled is not None:
+            return state.nightlight_enabled
+        return self._is_on
+
+    @property
+    def brightness(self) -> int | None:
+        """Return brightness (0-255)."""
+        state = self.device_state
+        if state is None:
+            return None
+        return self._device_to_ha_brightness(state.brightness)
+
+    @property
+    def rgb_color(self) -> tuple[int, int, int] | None:
+        """Return RGB color as (r, g, b) tuple."""
+        state = self.device_state
+        if state and state.color:
+            return state.color.as_tuple
+        return None
+
+    @property
+    def color_temp_kelvin(self) -> int | None:
+        """Return color temperature in Kelvin."""
+        state = self.device_state
+        return state.color_temp_kelvin if state and state.color_temp_kelvin else None
+
+    @property
+    def min_color_temp_kelvin(self) -> int:
+        """Return minimum color temperature in Kelvin."""
+        temp_range = self._device.color_temp_range
+        return temp_range.min_kelvin if temp_range else 2000
+
+    @property
+    def max_color_temp_kelvin(self) -> int:
+        """Return maximum color temperature in Kelvin."""
+        temp_range = self._device.color_temp_range
+        return temp_range.max_kelvin if temp_range else 9000
+
+    def _ha_to_device_brightness(self, ha_brightness: int) -> int:
+        """Convert HA brightness (0-255) to device range, respecting min."""
+        ratio = ha_brightness / HA_BRIGHTNESS_MAX
+        result = int(
+            self._brightness_min + ratio * (self._brightness_max - self._brightness_min)
+        )
+        return max(self._brightness_min, min(self._brightness_max, result))
+
+    def _device_to_ha_brightness(self, device_brightness: int) -> int:
+        """Convert device brightness to HA range (0-255), respecting min."""
+        device_range = self._brightness_max - self._brightness_min
+        if device_range <= 0:
+            return 0
+        result = int(
+            (device_brightness - self._brightness_min)
+            / device_range
+            * HA_BRIGHTNESS_MAX
+        )
+        return max(0, min(HA_BRIGHTNESS_MAX, result))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn the night light on with optional parameters."""
+        if ATTR_BRIGHTNESS in kwargs:
+            ha_brightness = kwargs[ATTR_BRIGHTNESS]
+            device_brightness = self._ha_to_device_brightness(ha_brightness)
+            await self.coordinator.async_control_device(
+                self._device_id,
+                BrightnessCommand(brightness=device_brightness),
+            )
+
+        if ATTR_RGB_COLOR in kwargs:
+            r, g, b = kwargs[ATTR_RGB_COLOR]
+            color = RGBColor(r=r, g=g, b=b)
+            await self.coordinator.async_control_device(
+                self._device_id,
+                ColorCommand(color=color),
+            )
+
+        if ATTR_COLOR_TEMP_KELVIN in kwargs:
+            kelvin = kwargs[ATTR_COLOR_TEMP_KELVIN]
+            await self.coordinator.async_control_device(
+                self._device_id,
+                ColorTempCommand(kelvin=kelvin),
+            )
+
+        has_attribute = any(
+            k in kwargs
+            for k in (ATTR_BRIGHTNESS, ATTR_RGB_COLOR, ATTR_COLOR_TEMP_KELVIN)
+        )
+        if not has_attribute or not self.is_on:
+            success = await self.coordinator.async_control_device(
+                self._device_id,
+                create_night_light_command(enabled=True),
+            )
+            if success:
+                self._is_on = True
+                self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn the night light off."""
+        success = await self.coordinator.async_control_device(
+            self._device_id,
+            create_night_light_command(enabled=False),
+        )
+        if success:
+            self._is_on = False
+            self.async_write_ha_state()

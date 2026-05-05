@@ -25,6 +25,7 @@ from .const import (
     SUFFIX_HDMI_SOURCE_SELECT,
     SUFFIX_HEATER_FAN_SPEED,
     SUFFIX_MUSIC_MODE_SELECT,
+    SUFFIX_NIGHT_LIGHT_SCENE_SELECT,
     SUFFIX_PURIFIER_MODE_SELECT,
     SUFFIX_SCENE_SELECT,
 )
@@ -37,10 +38,18 @@ from .models import (
     SceneCommand,
     WorkModeCommand,
 )
-from .models.device import INSTANCE_HDMI_SOURCE, INSTANCE_PURIFIER_MODE
+from .models.device import (
+    CAPABILITY_MODE,
+    INSTANCE_HDMI_SOURCE,
+    INSTANCE_NIGHT_LIGHT_SCENE,
+    INSTANCE_PURIFIER_MODE,
+)
 
 # DIY Style options for select entity
 DIY_STYLE_OPTIONS = list(DIY_STYLE_NAMES.keys())
+
+# Purifier work mode constant (gear/manual mode) for workMode-based devices.
+PURIFIER_WORK_MODE_GEAR = 1
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -181,17 +190,39 @@ async def async_setup_entry(
         if device.is_purifier:
             purifier_options = device.get_purifier_mode_options()
             if purifier_options:
+                use_work_mode = (
+                    device.get_capability(CAPABILITY_MODE, INSTANCE_PURIFIER_MODE)
+                    is None
+                )
                 entities.append(
                     GoveePurifierModeSelectEntity(
                         coordinator=coordinator,
                         device=device,
                         options=purifier_options,
+                        use_work_mode=use_work_mode,
                     )
                 )
                 _LOGGER.debug(
                     "Created purifier mode select entity for %s with %d modes",
                     device.name,
                     len(purifier_options),
+                )
+
+        # Night light scene selector
+        if device.supports_night_light_scene:
+            night_light_options = device.get_night_light_scene_options()
+            if night_light_options:
+                entities.append(
+                    GoveeNightLightSceneSelectEntity(
+                        coordinator=coordinator,
+                        device=device,
+                        options=night_light_options,
+                    )
+                )
+                _LOGGER.debug(
+                    "Created night light scene select entity for %s with %d scenes",
+                    device.name,
+                    len(night_light_options),
                 )
 
     async_add_entities(entities)
@@ -829,6 +860,7 @@ class GoveePurifierModeSelectEntity(GoveeEntity, SelectEntity):
         coordinator: GoveeCoordinator,
         device: GoveeDevice,
         options: list[dict[str, Any]],
+        use_work_mode: bool = False,
     ) -> None:
         """Initialize the purifier mode select entity.
 
@@ -836,8 +868,11 @@ class GoveePurifierModeSelectEntity(GoveeEntity, SelectEntity):
             coordinator: Govee data coordinator.
             device: Device this select belongs to.
             options: List of purifier mode options from capability parameters.
+            use_work_mode: True when options map to work_mode mode_value.
         """
         super().__init__(coordinator, device)
+
+        self._use_work_mode = use_work_mode
 
         # Build option mapping: display name -> value
         self._option_map: dict[str, int] = {}
@@ -859,11 +894,16 @@ class GoveePurifierModeSelectEntity(GoveeEntity, SelectEntity):
     def current_option(self) -> str | None:
         """Return current selected option from state."""
         state = self.coordinator.get_state(self._device_id)
-        if state and state.purifier_mode is not None:
-            # Find option name matching the current value
-            for name, value in self._option_map.items():
-                if value == state.purifier_mode:
-                    return name
+        if state:
+            if self._use_work_mode and state.mode_value is not None:
+                for name, value in self._option_map.items():
+                    if value == state.mode_value:
+                        return name
+            elif state.purifier_mode is not None:
+                # Find option name matching the current value
+                for name, value in self._option_map.items():
+                    if value == state.purifier_mode:
+                        return name
         # Return first option as default if available
         return self._attr_options[0] if self._attr_options else None
 
@@ -874,10 +914,17 @@ class GoveePurifierModeSelectEntity(GoveeEntity, SelectEntity):
             _LOGGER.warning("Unknown purifier mode option: %s", option)
             return
 
-        command = ModeCommand(
-            mode_instance=INSTANCE_PURIFIER_MODE,
-            value=value,
-        )
+        command: WorkModeCommand | ModeCommand
+        if self._use_work_mode:
+            command = WorkModeCommand(
+                work_mode=PURIFIER_WORK_MODE_GEAR,
+                mode_value=value,
+            )
+        else:
+            command = ModeCommand(
+                mode_instance=INSTANCE_PURIFIER_MODE,
+                value=value,
+            )
 
         success = await self.coordinator.async_control_device(
             self._device_id,
@@ -895,6 +942,77 @@ class GoveePurifierModeSelectEntity(GoveeEntity, SelectEntity):
         else:
             _LOGGER.warning(
                 "Failed to set purifier mode '%s' on %s",
+                option,
+                self._device.name,
+            )
+
+
+class GoveeNightLightSceneSelectEntity(GoveeEntity, SelectEntity):
+    """Govee night light scene select entity."""
+
+    _attr_translation_key = "govee_night_light_scene_select"
+    _attr_icon = "mdi:lightbulb-night"
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+        options: list[dict[str, Any]],
+    ) -> None:
+        """Initialize the night light scene select entity."""
+        super().__init__(coordinator, device)
+
+        self._option_map: dict[str, int] = {}
+        option_names: list[str] = []
+
+        for opt in options:
+            name = opt.get("name", "")
+            value = opt.get("value")
+            if name and value is not None:
+                self._option_map[name] = value
+                option_names.append(name)
+
+        self._attr_options = option_names
+        self._attr_unique_id = f"{device.device_id}{SUFFIX_NIGHT_LIGHT_SCENE_SELECT}"
+
+    @property
+    def current_option(self) -> str | None:
+        """Return current selected option from state."""
+        state = self.coordinator.get_state(self._device_id)
+        if state and state.nightlight_scene is not None:
+            for name, value in self._option_map.items():
+                if value == state.nightlight_scene:
+                    return name
+        return self._attr_options[0] if self._attr_options else None
+
+    async def async_select_option(self, option: str) -> None:
+        """Handle night light scene selection."""
+        value = self._option_map.get(option)
+        if value is None:
+            _LOGGER.warning("Unknown night light scene option: %s", option)
+            return
+
+        command = ModeCommand(
+            mode_instance=INSTANCE_NIGHT_LIGHT_SCENE,
+            value=value,
+        )
+
+        success = await self.coordinator.async_control_device(
+            self._device_id,
+            command,
+        )
+
+        if success:
+            self.async_write_ha_state()
+            _LOGGER.debug(
+                "Set night light scene '%s' (value=%d) on %s",
+                option,
+                value,
+                self._device.name,
+            )
+        else:
+            _LOGGER.warning(
+                "Failed to set night light scene '%s' on %s",
                 option,
                 self._device.name,
             )
