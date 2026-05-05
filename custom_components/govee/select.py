@@ -914,6 +914,7 @@ class GoveePurifierModeSelectEntity(GoveeEntity, SelectEntity):
             _LOGGER.warning("Unknown purifier mode option: %s", option)
             return
 
+        command: WorkModeCommand | ModeCommand
         if self._use_work_mode:
             command = WorkModeCommand(
                 work_mode=PURIFIER_WORK_MODE_GEAR,
