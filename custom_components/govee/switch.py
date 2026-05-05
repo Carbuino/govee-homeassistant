@@ -54,8 +54,14 @@ async def async_setup_entry(
         if device.is_plug and device.supports_power:
             entities.append(GoveePlugSwitchEntity(coordinator, device))
 
-        # Create switch for night light toggle (lights with night light mode)
-        if device.supports_night_light:
+        # Create switch for night light toggle.
+        # Non-light devices that have brightness/color support get a richer
+        # GoveeNightLightEntity in light.py instead, so skip the switch for those
+        # to avoid exposing both a switch and a light for the same feature.
+        has_night_light_entity = not device.is_light_device and (
+            device.supports_brightness or device.supports_rgb or device.supports_color_temp
+        )
+        if device.supports_night_light and not has_night_light_entity:
             entities.append(GoveeNightLightSwitchEntity(coordinator, device))
 
         # Create switch for music mode toggle

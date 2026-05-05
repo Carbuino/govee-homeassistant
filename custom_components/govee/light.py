@@ -464,6 +464,30 @@ class GoveeNightLightEntity(GoveeEntity, LightEntity, RestoreEntity):
             self._is_on = last_state.state == "on"
 
     @property
+    def color_mode(self) -> ColorMode:
+        """Return current color mode based on device state.
+
+        Always returns a value from supported_color_modes to satisfy
+        HA Core validation (color_mode must be in supported_color_modes).
+        """
+        state = self.device_state
+        modes = self.supported_color_modes or {ColorMode.ONOFF}
+
+        if state and state.color_temp_kelvin is not None:
+            if ColorMode.COLOR_TEMP in modes:
+                return ColorMode.COLOR_TEMP
+
+        if state and state.color is not None:
+            if ColorMode.RGB in modes:
+                return ColorMode.RGB
+
+        if ColorMode.BRIGHTNESS in modes:
+            return ColorMode.BRIGHTNESS
+        if ColorMode.COLOR_TEMP in modes:
+            return ColorMode.COLOR_TEMP
+        return ColorMode(next(iter(modes)))
+
+    @property
     def is_on(self) -> bool | None:
         """Return True if night light is on."""
         state = self.device_state
