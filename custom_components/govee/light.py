@@ -93,7 +93,7 @@ async def async_setup_entry(
                 or device.supports_color_temp
             )
         ):
-            # Skip on/off-only night lights (handled by switch entity).
+            # Create for night lights with brightness/color control; on/off-only uses switch entity.
             entities.append(GoveeNightLightEntity(coordinator, device))
 
         # Create segment entities for RGBIC devices based on per-device mode
